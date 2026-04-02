@@ -102,10 +102,9 @@ NET_P_CUTOFF       <- 0.05                   # P-valor máximo para a correlaç�
   tax_separada <- tabela_limpa %>%
     select(tax) %>% 
     separate(tax, 
-             into = c("Kingdom", "Nivel_Aux", "Phylum", "Class", "Order", "Family", "Genus"), 
+             into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Specie"), 
              sep = ";", 
              fill = "right") %>%
-    select(-Nivel_Aux) %>%
     as.matrix()
   
   # 4.3. Criação da Matriz Numérica
@@ -484,7 +483,7 @@ NET_P_CUTOFF       <- 0.05                   # P-valor máximo para a correlaç�
   paleta_cores <- brewer.pal(max(3, n_cores_necessarias), "Dark2")
   cores_grupos <- setNames(paleta_cores[1:n_cores_necessarias], grupos_no_grafico)
   
-  titulo_texto <- paste("Differential Abundance: Beach type")
+  titulo_texto <- paste("Differential Abundance:", VAR_AGRUPAMENTO)
   subtitulo_texto <- paste("Significant Biomarkers (p <", DESEQ_ALPHA, "| LFC >", DESEQ_LFC, ")")
   texto_completo_faixa <- paste0(titulo_texto, "\n", subtitulo_texto)
   
