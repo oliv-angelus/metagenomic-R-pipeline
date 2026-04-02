@@ -680,3 +680,94 @@ NET_P_CUTOFF       <- 0.05                   # P-valor máximo para a correlaç�
   hubs_df <- data.frame(Genus = V(net)$Genus, Phylum = V(net)$Phylum, Degree = V(net)$Degree, Abundance = V(net)$Size) %>% arrange(desc(Degree))
   write.table(hubs_df, "Tabela_Network_Hubs.tsv", sep="\t", quote=FALSE, row.names=FALSE)
   print("Análise Finalizada com Sucesso!")}
+
+                                    # --- 1. IMPORTAÇÃO E LIMPEZA ---
+df_meta <- read.delim("DATA.tsv", sep = "\t", header = TRUE)
+rownames(df_meta) <- df_meta$Sample
+
+df_meta_limpo <- df_meta %>%
+  mutate(across(pH:alcalinity, ~ as.numeric(str_replace_all(as.character(.), ",", ".")))) %>%
+  mutate(Beach_type = str_to_title(Beach_type))
+
+abund_matrix <- t(as(otu_table(ps), "matrix"))
+abund_matrix <- abund_matrix[rownames(df_meta_limpo), ]
+
+# --- 2. TRANSFORMAÇÃO E SELEÇÃO A PRIORI ---
+abund_hellinger <- decostand(abund_matrix, method = "hellinger")
+
+# SOLUÇÃO: Selecionamos apenas as 5 variáveis que contam a sua história ecológica!
+variaveis_ambientais <- df_meta_limpo %>%
+  select(pH, temperature, salinity, dissolved_oxygen, turbidity) %>%
+  scale() %>% 
+  as.data.frame()
+
+# --- 3. EXECUÇÃO DA RDA E TESTE GLOBAL ---
+rda_model <- rda(abund_hellinger ~ ., data = variaveis_ambientais)
+
+# Teste global do modelo
+set.seed(123)
+anova_modelo <- anova.cca(rda_model, permutations = 999)
+p_modelo <- anova_modelo$`Pr(>F)`[1]
+
+# Extração de variância e R2 Ajustado
+r2_adj <- RsquareAdj(rda_model)$adj.r.squared
+sum_rda <- summary(rda_model)
+rda1_var <- round(sum_rda$cont$importance[2, "RDA1"] * 100, 2)
+rda2_var <- round(sum_rda$cont$importance[2, "RDA2"] * 100, 2)
+
+# --- 4. EXTRAÇÃO PARA O GRÁFICO ---
+sitios_scores <- as.data.frame(scores(rda_model, display = "sites")) %>%
+  mutate(SampleID = rownames(.),
+         Group = df_meta_limpo$Beach_type)
+
+setas_scores <- as.data.frame(scores(rda_model, display = "bp")) %>%
+  mutate(Variable = rownames(.)) %>%
+  # Retiramos o filtro! Agora as 5 setas ecológicas vão aparecer.
+  mutate(RDA1 = RDA1 * 2.5, RDA2 = RDA2 * 2.5) 
+
+# --- 5. GERAÇÃO DO GRÁFICO (Estilo Alfa) ---
+cores_projeto <- c("Urban" = "#d95f02", "Island" = "#1b9e77")
+
+p_rda <- ggplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", linewidth = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50", linewidth = 0.5) +
+  
+  geom_segment(data = setas_scores, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), color = "blue", linewidth = 0.8) +
+  geom_text_repel(data = setas_scores, aes(x = RDA1, y = RDA2, label = Variable),
+                  color = "blue", fontface = "bold", family = "serif", size = 5) +
+  
+  geom_point(data = sitios_scores, aes(x = RDA1, y = RDA2, fill = Group), 
+             size = 6, shape = 21, color = "black", stroke = 0.6) +
+  
+  scale_fill_manual(values = cores_projeto) +
+  labs(x = paste0("RDA 1 (", rda1_var, "%)"), y = paste0("RDA 2 (", rda2_var, "%)")) +
+  theme(
+    text = element_text(family = "serif"),
+    axis.text = element_text(size = 12, color = "black"),
+    axis.title = element_text(size = 14, face = "bold"),
+    legend.position = "right",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    panel.background = element_rect(fill = "gray90"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    panel.grid.major = element_line(color = "white", linewidth = 0.5),
+    panel.grid.minor = element_line(color = "white", linewidth = 0.25)
+  )
+
+# --- 6. MONTAGEM FINAL ---
+titulo_texto <- paste0("Redundancy Analysis (RDA): Key Environmental Drivers\n",
+                       "Model p = ", format(round(p_modelo, 4), nsmall = 4), 
+                       " | Adjusted R² = ", round(r2_adj, 3))
+
+lbl <- ggplot() + 
+  annotate("text", x = 1, y = 1, label = titulo_texto, size = 6, fontface = "bold", family = "serif") +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "gray70", color = NA))
+
+PAINEL_RDA <- lbl / p_rda + plot_layout(heights = c(0.12, 1))
+
+print(PAINEL_RDA)
+
+ggsave("Figure_RDA_Selected_Drivers.tiff", plot = PAINEL_RDA, 
+       width = 12, height = 10, dpi = 600, compression = "lzw", bg = "white")
