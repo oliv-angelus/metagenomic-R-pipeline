@@ -1,63 +1,53 @@
-# 🧬 16S-NANOPORE: High-Resolution Microbial Ecology Pipeline
+# Microbiome Analysis Pipeline
 
-This repository contains a modular **R pipeline** developed for the statistical analysis and high-quality visualization of 16S rRNA metagenomic data. This script is specifically optimized for **Oxford Nanopore Technologies (ONT)** long-read data, leveraging nearly full-length 16S sequences (~1580 bp) to achieve superior taxonomic resolution at the genus and species levels.
+This repository contains a comprehensive and modular R-based pipeline designed for the analysis of microbiome data (16S or Metagenomics). It leverages the `phyloseq` framework to perform a complete ecological analysis, ranging from data quality control to advanced multivariate statistics, co-occurrence networks, and indicator species analysis.
 
-## 🌟 Key Features
+## Features
 
-* **Standardized Normalization**: Implements **rarefaction** to the minimum library depth to ensure unbiased diversity comparisons across samples.
-* **Statistical Validation**:
-    * **Alpha Diversity**: Non-parametric comparisons using the **Kruskal-Wallis test** to evaluate richness and evenness.
-    * **Beta Diversity**: Community structure validation via **PERMANOVA (999 permutations)** based on the **Bray-Curtis dissimilarity matrix**.
-    * **Biomarker Discovery**: Utilizes **DESeq2** with high-stringency filters (Adjusted P < 0.05 and Log2 Fold Change > 5) to identify robust environmental indicators.
-* **Ecological Networks**: Constructs co-occurrence networks based on **Spearman’s rank correlation** ($\rho > 0.6, p < 0.05$) to reveal biotic interactions between key taxa.
-* **Core Microbiome Analysis**: Identifies persistent microbial members based on custom prevalence (e.g., 90%) and abundance thresholds.
+This pipeline automates the entire workflow, generating publication-ready figures (TIFF/600dpi) and statistical tables (TSV) for the following analyses:
 
-## 🛠️ Getting Started
+* **Quality Control:** Rarefaction curves and Good’s Coverage estimation.
+* **Alpha Diversity:** Richness, Shannon, Simpson, and Pielou's Evenness indices (with Kruskal-Wallis statistical testing).
+* **Beta Diversity:** PCoA based on Bray-Curtis dissimilarity (with PERMANOVA testing).
+* **Taxonomic Composition:** Abundance bar plots at multiple taxonomic levels.
+* **Core Microbiome:** Heatmap visualization of core taxa.
+* **Differential Abundance:** DESeq2 analysis for finding statistically significant biomarkers.
+* **Environmental Drivers:** Redundancy Analysis (RDA) with forward selection of significant environmental variables.
+* **Co-occurrence Networks:** Spearman-based networks with topological analysis (Degree, Betweenness, Closeness) and visual clustering.
+* **Indicator Species (IndVal):** Identification of bioindicator taxa using the Indicator Species Analysis (indicspecies package).
 
-### 1. Prerequisites
-The script automatically manages dependencies. It utilizes **CRAN** and **Bioconductor** to install and load the necessary packages:
-* `phyloseq`, `vegan`, `DESeq2` (Core microbiome and statistical analysis).
-* `ggplot2`, `patchwork`, `ggrepel` (Advanced data visualization).
-* `igraph`, `ggraph`, `Hmisc` (Network topology and correlation).
+## Getting Started
 
-### 2. Input Files
-The pipeline requires two main tab-separated files in the working directory:
-* `ABUND.tsv`: Taxonomic abundance table (must include a `tax` column with the full taxonomic string).
-* `DATA.tsv`: Sample metadata (the first column must contain Sample IDs matching the abundance table).
+### Prerequisites
+You need R and RStudio installed. If you are on Windows, ensure you have Rtools installed to build the required packages.
 
-### 3. Configuration (Control Panel)
-Global parameters can be adjusted in **Section 3** of the script to ensure reproducibility without modifying the core logic:
+### Installation
+Run the installation block provided in the script once to set up all necessary dependencies, including Bioconductor packages (phyloseq, DESeq2).
 
-```r
-VAR_AGRUPAMENTO  <- "Beach_type"  # Experimental variable (e.g., Urban vs. Island)
-DESEQ_LFC        <- 5             # Minimum Log2 Fold Change (Stringent: 32x difference)
-CORE_PREVALENCIA <- 0.90          # Taxa present in 90% of samples
-SEED_GERAL       <- 123           # Global seed for reproducible results
-```
-## 📊 Analytical Workflow
+## Configuration (Control Panel)
+The script is designed for ease of use. You do not need to modify the processing logic. Simply update the "Section 3: Control Panel" at the top of the script with your parameters:
 
-The pipeline follows a rigorous statistical framework to transform raw taxonomic counts into ecological insights, specifically addressing the high resolution provided by Nanopore long-reads (~1580 bp):
+* **File Paths:** Set `ARQUIVO_ABUNDANCIA` and `ARQUIVO_METADADOS`.
+* **Grouping:** Set `VAR_AGRUPAMENTO` to the column name in your metadata that defines your experimental groups.
+* **Taxonomic Rank:** Customize `NETWORK_RANK`, `CORE_MICROBIOME_RANK`, and `INDVAL_RANK` to perform analyses at the level that best fits your study.
 
-1.  **Quality Assessment**: Validates sequencing depth and sampling sufficiency using **Good's Coverage** ($>95\%$) and **Rarefaction Curves** to ensure the microbial diversity of the sampled urban and island beaches is adequately represented.
-2.  **Diversity Profiling**: Calculates a comprehensive suite of alpha diversity indices (Observed OTUs, Chao1, ACE, Shannon, Simpson, and Pielou’s Evenness). Statistical significance between groups is determined using **Kruskal-Wallis non-parametric tests**.
-3.  **Community Structure**: Visualizes group separation using **Principal Coordinates Analysis (PCoA)** based on the **Bray-Curtis dissimilarity matrix**. The statistical significance of the environmental clustering is validated via **PERMANOVA** with 999 permutations.
-4.  **Differential Abundance (Biomarkers)**: Identifies significant **genomic enrichment** (reflecting genomic potential, not gene expression) of specific genera using **DESeq2**. Highly stringent filters ($|LFC| > 5$ and $p_{adj} < 0.05$) highlight robust biomarkers such as *Pseudomonas* and *Vibrio* in urban areas versus *Synechococcus* in island sites.
-5.  **Biotic Interactions**: Maps co-occurrence patterns using **Spearman’s rank correlations** ($\rho > 0.6, p < 0.05$) to identify "Hub" taxa and understand the connectivity of the coastal microbiome under different anthropogenic pressures.
+## Input Data Structure
+To use this script, your data files should follow these structures:
 
----
+1. **Abundance Table (abundance.tsv):**
+   - Tab-separated file.
+   - Must contain a column named "tax" with semicolon-separated lineages (Domain;Kingdom;Phylum;Class;Order;Family;Genus;Specie).
+2. **Metadata Table (metadados.tsv):**
+   - Tab-separated file.
+   - The first column must contain the Sample IDs (which must match the column headers of your abundance table).
 
-## 📝 Citation
+## Outputs
+The script automatically generates high-quality files in your working directory:
+* **TIFF Figures:** All plots are saved in TIFF format (600 dpi, LZW compression), ready for manuscript submission.
+* **TSV Tables:** Statistical logs, including full DESeq2 results, RDA scores, and Indicator Species tables, are exported for transparency and supplementary material.
 
-If you utilize this pipeline or the associated findings in your research, please cite the main manuscript:
-
-> **under review**
-
----
-
-## ⚖️ License
-
-Distributed under the **MIT License**. This allows for free use and modification of the scripts for academic and commercial purposes, provided original authorship is credited.
-
----
-
-*This pipeline was developed by Angelo Felipe Barbosa de Oliveira as part of PhD research in Bioinformatics at the Federal University of Pará (UFPA), Belém, Brazil.*
+## Author
+Ângelo Felipe Barbosa de Oliveira
+PhD Candidate, Genetics and Molecular Biology (PPGBM)
+Federal University of Pará (UFPA)
+Biological Engineering Laboratory (ENGBIO)
