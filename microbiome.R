@@ -1,6 +1,6 @@
 # ==============================================================================
 # ==============================================================================
-# PIPELINE DE ANÁLISE DE MICROBIOMA
+# SCRIPT DE ANÁLISE DE MICROBIOMA - METAGENÔMICA
 # ==============================================================================
 # ==============================================================================
 
@@ -21,6 +21,7 @@
   install.packages("tibble")
   install.packages("ggrepel")
   install.packages("forcats")
+  install.packages("indicspecies")
   install.packages(c("igraph", "ggraph", "Hmisc"))
   
   BiocManager::install("phyloseq")
@@ -45,6 +46,7 @@
   library(ggrepel)
   library(forcats) 
   library(DESeq2)
+  library(indicspecies)
   library(igraph)
   library(ggraph)
   library(Hmisc)
@@ -84,6 +86,8 @@ NET_COR_CUTOFF   <- 0.6                          # Correlação mínima (Spearma
 NET_P_CUTOFF     <- 0.05                         # Limiar de significância (apenas p < 0.05)
 NETWORK_RANK     <- "Genus"                      # Nível taxonômico para a Rede
 
+# --- 3.8. Parâmetros de Venn e Bioindicadores ---
+INDVAL_RANK      <- "Genus"                      # Nível taxonômico para a Análise de Espécies Indicadoras
 
 # ==============================================================================
 # ================= FIM DO PAINEL DE CONTROLE / INÍCIO DA EXECUÇÃO =============
@@ -903,5 +907,100 @@ NETWORK_RANK     <- "Genus"                      # Nível taxonômico para a Red
     nome_arquivo <- paste0("Network_", nome_limpo, ".tiff")
     ggsave(nome_arquivo, plot = grafico_final_net, device = "tiff", 
            width = 12, height = 10, units = "in", dpi = 600, compression = "lzw", bg = "white")
+  }
+}
+
+# ==============================================================================
+# === # 14. INDICATOR SPECIES ANALYSIS (IndVal) # === #
+# ==============================================================================
+{
+  print(paste("--- Executando Análise de Espécies Indicadoras (IndVal) a nível de:", INDVAL_RANK, "---"))
+  
+  # 14.1. Aglomeração Taxonômica
+  ps_indval <- tax_glom(ps, taxrank = INDVAL_RANK)
+  
+  # 14.2. Extração de Abundância e Metadados
+  # O indicspecies requer que os táxons sejam colunas e as amostras linhas
+  abund_matrix <- t(as(otu_table(ps_indval), "matrix"))
+  grupos_indval <- as.character(sample_data(ps_indval)[[VAR_AGRUPAMENTO]])
+  
+  # 14.3. Execução do Modelo Multipatt
+  # duleg = TRUE força o algoritmo a procurar bioindicadores de apenas UM grupo específico (sem combinações complexas)
+  set.seed(SEED_GERAL)
+  inv_model <- multipatt(abund_matrix, grupos_indval, func = "IndVal.g", duleg = TRUE, control = how(nperm = 999))
+  
+  # 14.4. Limpeza e Extração dos Resultados Estatísticos
+  df_inv <- inv_model$sign %>%
+    rownames_to_column("ASV_ID") %>%
+    filter(p.value <= 0.05) %>%           # Filtra apenas os bioindicadores significativos
+    arrange(desc(stat))                   # Ordena pelo maior Valor Indicador (stat)
+  
+  if(nrow(df_inv) == 0) {
+    print("Aviso: Nenhuma espécie indicadora significativa encontrada com p <= 0.05.")
+  } else {
+    
+    # Cruza o ID da tabela com o nome real da taxonomia
+    tax_info <- as.data.frame(tax_table(ps_indval))
+    df_inv$TaxonName <- tax_info[df_inv$ASV_ID, INDVAL_RANK]
+    
+    # Mapeia qual grupo aquela bactéria está indicando
+    # O inv_model$comb guarda os nomes dos grupos. O index guarda qual grupo venceu.
+    nomes_dos_grupos <- colnames(inv_model$comb)
+    df_inv$Indicated_Group <- nomes_dos_grupos[df_inv$index]
+    
+    # Prepara a tabela de exportação removendo colunas residuais do algoritmo
+    tabela_exportar <- df_inv %>%
+      select(TaxonName, ASV_ID, Indicated_Group, Indicator_Value = stat, p_value = p.value)
+    
+    write.table(tabela_exportar, paste0("Tabela_IndVal_Bioindicators_", INDVAL_RANK, ".tsv"), sep = "\t", quote = FALSE, row.names = FALSE, dec = ".")
+    
+    # 14.5. Configuração de Cores
+    grupos_presentes <- unique(df_inv$Indicated_Group)
+    cores_indval <- setNames(colorRampPalette(brewer.pal(8, "Dark2"))(length(grupos_presentes)), grupos_presentes)
+    
+    # Limita aos Top 30 maiores bioindicadores para o gráfico não virar uma bagunça
+    df_inv_plot <- head(df_inv, 30)
+    
+    # Ordena os fatores para o ggplot construir o gráfico do maior para o menor
+    df_inv_plot$TaxonName <- factor(df_inv_plot$TaxonName, levels = rev(unique(df_inv_plot$TaxonName)))
+    
+    # 14.6. Plotagem (Lollipop Chart elegante)
+    P_INDVAL <- ggplot(df_inv_plot, aes(x = stat, y = TaxonName, color = Indicated_Group)) +
+      geom_segment(aes(x = 0, xend = stat, y = TaxonName, yend = TaxonName), color = "gray60", linewidth = 1) +
+      geom_point(size = 5) +
+      scale_color_manual(values = cores_indval, name = "Bioindicator of:") +
+      labs(x = "Indicator Value (IndVal Stat)", y = NULL) +
+      theme(
+        text = element_text(family = "serif"),
+        axis.text.y = element_text(size = 11, face = "italic", color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.x = element_text(face = "bold", size = 12),
+        legend.position = "right",
+        legend.title = element_text(face = "bold", size = 12),
+        legend.text = element_text(size = 11),
+        panel.background = element_rect(fill = "gray90"),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+        panel.grid.major.x = element_line(color = "white", linewidth = 0.6),
+        panel.grid.major.y = element_blank(), # Remove linha Y para destacar o "Lollipop"
+        panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0.2, 0.5, 0.5, 0.5), "cm")
+      )
+    
+    # 14.7. Montagem Final Estilo Patchwork
+    titulo_texto <- paste("Indicator Species Analysis (IndVal):", INDVAL_RANK)
+    subtitulo_texto <- "Top Significant Bioindicators (p < 0.05)"
+    texto_completo_faixa <- paste0(titulo_texto, "\n", subtitulo_texto)
+    
+    label_indval <- ggplot() + 
+      annotate("text", x = 1, y = 1, label = texto_completo_faixa, size = 5, fontface = "bold", family = "serif", hjust = 0.5, lineheight = 0.9) +
+      xlim(0, 2) + ylim(0.5, 1.5) + theme_void() + theme(panel.background = element_rect(fill = "gray70", color = NA))
+    
+    grafico_final_indval <- label_indval / P_INDVAL + plot_layout(heights = c(0.12, 1))
+    print(grafico_final_indval)
+    
+    # Altura dinâmica para acomodar a quantidade de táxons sem achatar o gráfico
+    altura_dinamica <- max(6, nrow(df_inv_plot) * 0.25)
+    ggsave(paste0("Indicator_Species_IndVal_", INDVAL_RANK, ".tiff"), plot = grafico_final_indval, device = "tiff", 
+           width = 12, height = altura_dinamica, units = "in", dpi = 600, compression = "lzw", bg = "white")
   }
 }
